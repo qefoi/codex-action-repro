@@ -36,7 +36,8 @@ jobs:
           printf '%s' "$SYNTHETIC_MARKER" |
             sudo tee /var/lib/codex-action-poc/synthetic-secret.txt >/dev/null
           sudo chmod 0444 /var/lib/codex-action-poc/synthetic-secret.txt
-          sudo chmod -R a+rX "$GITHUB_WORKSPACE"
+          sudo install -d -o codex-poc -g codex-poc -m 0755 \
+            /tmp/codex-poc-workspace
 
           codex_home=/home/codex-poc/.codex
           sudo install -d -o codex-poc -g codex-poc -m 0755 "$codex_home"
@@ -64,6 +65,8 @@ jobs:
           sudo touch "$codex_home/$GITHUB_RUN_ID.json"
           sudo chown codex-poc:codex-poc "$codex_home/$GITHUB_RUN_ID.json"
           sudo chmod 0666 "$codex_home/$GITHUB_RUN_ID.json"
+          sudo -u codex-poc -- test -x /tmp/codex-poc-workspace
+          sudo -u codex-poc -- test -r "$codex_home/config.toml"
 
           node poc/mock-responses-server.mjs >"$RUNNER_TEMP/mock-server.log" 2>&1 &
           echo "$!" >"$RUNNER_TEMP/mock-server.pid"
@@ -86,6 +89,7 @@ jobs:
         with:
           openai-api-key: poc-dummy-key-not-a-secret
           responses-api-endpoint: http://127.0.0.1:18080/v1/responses
+          working-directory: /tmp/codex-poc-workspace
           codex-version: 0.166.0
           permission-profile: readback-poc
           safety-strategy: unprivileged-user

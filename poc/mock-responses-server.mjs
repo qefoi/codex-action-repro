@@ -19,7 +19,7 @@ fi`;
 const replaceOutputPathCommand = String.raw`set -eu
 status=/tmp/codex-action-poc-output-path.status
 rm -f -- "$status"
-output_path="$(find /tmp /home/runner/work/_temp -maxdepth 5 -type f -path '*/codex-exec-*/output.md' -print -quit 2>/dev/null || true)"
+output_path="$(find /tmp -maxdepth 5 -type f -path '*/codex-exec-*/output.md' -print -quit 2>/dev/null || true)"
 if [ -z "$output_path" ]; then
   printf '%s\n' OUTPUT_PATH_NOT_FOUND | tee "$status"
   exit 92
