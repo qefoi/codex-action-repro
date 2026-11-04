@@ -58,12 +58,13 @@ jobs:
           node poc/mock-responses-server.mjs >"$RUNNER_TEMP/mock-server.log" 2>&1 &
           echo "$!" >"$RUNNER_TEMP/mock-server.pid"
 
-          for _ in {1..20}; do
+          for _ in {1..40}; do
             if curl --fail --silent \
               "http://127.0.0.1:$POC_MOCK_PORT/healthz" >/dev/null; then
               echo "Mock Responses API is ready."
               exit 0
             fi
+            sleep 0.25
           done
 
           cat "$RUNNER_TEMP/mock-server.log" >&2
