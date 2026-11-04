@@ -49,6 +49,7 @@ jobs:
           ":minimal" = "read"
           ":tmpdir" = "write"
           ":slash_tmp" = "write"
+          "/opt/hostedtoolcache" = "read"
 
           [permissions.readback-poc.filesystem.":workspace_roots"]
           "." = "read"
