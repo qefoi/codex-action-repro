@@ -31,14 +31,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          sudo useradd --create-home --shell /bin/bash codex-poc
           sudo install -d -m 0755 /var/lib/codex-action-poc
           printf '%s' "$SYNTHETIC_MARKER" |
             sudo tee /var/lib/codex-action-poc/synthetic-secret.txt >/dev/null
           sudo chmod 0444 /var/lib/codex-action-poc/synthetic-secret.txt
+          sudo chmod -R a+rX "$GITHUB_WORKSPACE"
 
-          codex_home="$RUNNER_TEMP/trusted-codex-home"
-          mkdir -p "$codex_home"
-          cat >"$codex_home/config.toml" <<'TOML'
+          codex_home=/home/codex-poc/.codex
+          sudo install -d -o codex-poc -g codex-poc -m 0755 "$codex_home"
+          cat >"$RUNNER_TEMP/readback-poc-config.toml" <<'TOML'
           default_permissions = "readback-poc"
 
           [permissions.readback-poc.filesystem]
@@ -46,14 +48,22 @@ jobs:
           ":minimal" = "read"
           ":tmpdir" = "write"
           ":slash_tmp" = "write"
-          "/home/runner/work/_temp" = "write"
 
           [permissions.readback-poc.filesystem.":workspace_roots"]
-          "." = "write"
+          "." = "read"
 
           [permissions.readback-poc.network]
           enabled = false
           TOML
+          sudo install -o codex-poc -g codex-poc -m 0644 \
+            "$RUNNER_TEMP/readback-poc-config.toml" \
+            "$codex_home/config.toml"
+
+          # The proxy runs as the GitHub runner while Codex runs as codex-poc.
+          # Pre-create the exact server-info file so both can use it safely.
+          sudo touch "$codex_home/$GITHUB_RUN_ID.json"
+          sudo chown codex-poc:codex-poc "$codex_home/$GITHUB_RUN_ID.json"
+          sudo chmod 0666 "$codex_home/$GITHUB_RUN_ID.json"
 
           node poc/mock-responses-server.mjs >"$RUNNER_TEMP/mock-server.log" 2>&1 &
           echo "$!" >"$RUNNER_TEMP/mock-server.pid"
@@ -76,10 +86,10 @@ jobs:
         with:
           openai-api-key: poc-dummy-key-not-a-secret
           responses-api-endpoint: http://127.0.0.1:18080/v1/responses
-          codex-home: ${{ runner.temp }}/trusted-codex-home
           codex-version: 0.166.0
           permission-profile: readback-poc
-          safety-strategy: drop-sudo
+          safety-strategy: unprivileged-user
+          codex-user: codex-poc
           prompt: Run the deterministic synthetic readback test.
 
       - name: Assert negative control and path-readback impact
