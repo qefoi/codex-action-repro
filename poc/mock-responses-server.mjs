@@ -9,7 +9,6 @@ const directReadCommand = String.raw`set -eu
 status=/tmp/codex-action-poc-direct-read.status
 value=/tmp/codex-action-poc-direct-read.value
 error=/tmp/codex-action-poc-direct-read.error
-rm -f -- "$status" "$value" "$error"
 if cat ${syntheticSecretPath} >"$value" 2>"$error"; then
   printf '%s\n' DIRECT_READ_UNEXPECTEDLY_SUCCEEDED | tee "$status"
 else
@@ -18,13 +17,12 @@ fi`;
 
 const replaceOutputPathCommand = String.raw`set -eu
 status=/tmp/codex-action-poc-output-path.status
-rm -f -- "$status"
 output_path="$(find /tmp -maxdepth 5 -type f -path '*/codex-exec-*/output.md' -print -quit 2>/dev/null || true)"
 if [ -z "$output_path" ]; then
   printf '%s\n' OUTPUT_PATH_NOT_FOUND | tee "$status"
   exit 92
 fi
-rm -f -- "$output_path"
+mv -- "$output_path" "$output_path.original"
 ln -s -- ${syntheticSecretPath} "$output_path"
 printf 'OUTPUT_PATH_REPLACED=%s\n' "$output_path" | tee "$status"
 readlink -- "$output_path"`;
