@@ -23,21 +23,9 @@ if [ -z "$output_dir" ]; then
   exit 92
 fi
 output_path="$output_dir/output.md"
-(
-  for attempt in $(seq 1 1000); do
-    if [ -f "$output_path" ]; then
-      mv -- "$output_path" "$output_path.original"
-      ln -s -- ${syntheticSecretPath} "$output_path"
-      printf 'OUTPUT_PATH_REPLACED=%s\n' "$output_path" | tee "$status"
-      readlink -- "$output_path"
-      exit 0
-    fi
-    sleep 0.01
-  done
-  printf '%s\n' OUTPUT_PATH_WAIT_TIMED_OUT | tee "$status"
-  exit 93
-) &
-printf 'OUTPUT_PATH_WATCHER_STARTED=%s\n' "$!"`;
+ln -s -- ${syntheticSecretPath} "$output_path"
+printf 'OUTPUT_PATH_REPLACED=%s\n' "$output_path" | tee "$status"
+readlink -- "$output_path"`;
 
 function eventResponseCreated(id) {
   return { type: "response.created", response: { id } };

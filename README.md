@@ -9,11 +9,10 @@ Responses API tells Codex CLI 0.166.0 to perform three deterministic actions:
 
 1. Attempt to read a synthetic runner-private file directly. The custom Codex
    permission profile must block this negative control.
-2. Start a bounded watcher for the action-created temporary `output.md`. Once
-   Codex writes its real final message, preserve that file and replace its
-   pathname with a symbolic link to the same synthetic file. The profile
-   permits writes only in temporary directories and keeps the isolated working
-   directory read-only.
+2. Pre-create the action's temporary `output.md` pathname as a symbolic link to
+   the same synthetic file. Codex CLI logs but does not propagate the resulting
+   last-message write error. The profile permits writes only in temporary
+   directories and keeps the isolated working directory read-only.
 3. Return `SAFE_FINAL_MESSAGE` as the actual model final message.
 
 The workflow then verifies that the action's `final-message` output contains
